@@ -34,3 +34,8 @@ Under the hood:
 - the server receives HttpRequests (transparently)
 - the requests go through the flow we write
 - the resulting responses are served back (transparently)
+
+---
+
+- Cryptographic keys
+- -- https://docs.oracle.com/javase/8/docs/technotes/tools/unix/keytool.html
