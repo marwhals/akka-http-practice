@@ -53,7 +53,6 @@ object DirectivesBreakdown extends App {
       complete(StatusCodes.OK)
     }
 
-  Http().bindAndHandle(dontConfuse, "localhost", 8080)
 
   /**
    * Type 2 Directives
@@ -65,31 +64,116 @@ object DirectivesBreakdown extends App {
       println(s"I've got a number in my path: $itemNumber")
       complete(StatusCodes.OK)
     }
+  }
+  val pathMultiExtractRoute =
+    path("api" / "order" / IntNumber / IntNumber) { (id, inventory) =>
+      println(s"I've got TWO numbers in my path: $id, $inventory")
+      complete(StatusCodes.OK)
+    }
 
-    val pathMultiExtractRoute =
-      path("api" / "order" / IntNumber / IntNumber) { (id, inventory) =>
-        println(s"I've got TWO numbers in my path: $id, $inventory")
-        complete(StatusCodes.OK)
+
+  val queryParamExtractionRoute = path("api" / "item") {
+    // /api/item?id=45
+    parameter("id".as[Int]) { (itemId: Int) => //can use 'id symbol for perf improvement. Deprecated in Scala 3
+      println(s"I've extracted the ID as $itemId")
+      complete(StatusCodes.OK)
+    }
+  }
+  val extractRequestRoute =
+    path("controlEndpoint") {
+      extractRequest { (httpRequest: HttpRequest) =>
+        extractLog { (log: LoggingAdapter) =>
+          log.info(s"I've got the http request: $httpRequest")
+          complete(StatusCodes.OK)
+        }
       }
+    }
 
+  Http().bindAndHandle(queryParamExtractionRoute, "localhost", 8080)
 
-    val queryParamExtractionRoute = path("api" / "item") {
-      // /api/item?id=45
-      parameter("id".as[Int]) { (itemId: Int) => //can use 'id symbol for perf improvement. Deprecated in Scala 3
-        println(s"I've extracted the ID as $itemId")
+  /**
+   * Type #3: composite directives
+   *
+   */
+
+  val simpleNestedRoute =
+    path("api" / "item") {
+      get {
         complete(StatusCodes.OK)
       }
     }
-    val extractRequestRoute =
-      path("controlEndpoint") {
-        extractRequest { (httpRequest: HttpRequest) =>
-          extractLog { (log: LoggingAdapter) =>
-            log.info(s"I've got the http request: $httpRequest")
-            complete(StatusCodes.OK)
-          }
-        }
+
+  val compactSimpleNestedRoute = (path("api" / "item") & get) {
+    complete(StatusCodes.OK)
+  }
+
+  val compactExtractRequestRoute =
+    ((path("controlEndpoint")) & extractRequest & extractLog) { (request, log) =>
+      log.info(s"I've go the http request: $request")
+      complete(StatusCodes.OK)
+    }
+  val repeatedRoute =
+    path("about") {
+      complete(StatusCodes.OK)
+    } ~
+      path("aboutUs") {
+        complete(StatusCodes.OK)
       }
 
-    Http().bindAndHandle(queryParamExtractionRoute, "localhost", 8080)
-  }
+  val dryRoute =
+    (path("about") | path("aboutUs")) {
+      complete(StatusCodes.OK)
+    }
+
+  val blogByIdRoute =
+    path(IntNumber) { (blogpostId: Int) =>
+      // complex server logic
+      complete(StatusCodes.OK)
+    }
+
+  val blogByQueryParamRoute =
+    parameter('postId.as[Int]) { (blogpostId: Int) =>
+      // the SAME server logic
+      complete(StatusCodes.OK)
+    }
+
+  val combinedBlogByIdRoute = // when combining extraction directives they must have the same type
+    (path(IntNumber) | parameter('postId.as[Int])) { (blogpostId: Int) =>
+      // your original server logic
+      complete(StatusCodes.OK)
+    }
+
+  /**
+   * Type #4: "actionable" directives
+   */
+
+  val completeOkRoute = complete(StatusCodes.OK)
+
+  val failedRoute =
+    path("notSupported") {
+      failWith(new RuntimeException("Unsupported!")) // completes with HTTP 500
+    }
+
+  val routeWithRejection =
+    //    path("home") {
+    //      reject
+    //    } ~
+    path("index") {
+      completeOkRoute
+    }
+
+  /**
+   * Exercise: Spot the mistake ~~~~
+   */
+  val getOrPutPath =
+    path("api" / "myEndpoint") {
+      get {
+        completeOkRoute
+      } ~
+        post {
+          complete(StatusCodes.Forbidden)
+        }
+    }
+
+  Http().bindAndHandle(dontConfuse, "localhost", 8080)
 }
