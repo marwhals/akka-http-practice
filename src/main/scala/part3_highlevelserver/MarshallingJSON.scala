@@ -1,8 +1,34 @@
 package part3_highlevelserver
 
+import akka.actor.TypedActor.dispatcher
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
+import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.unmarshalling.FromRequestUnmarshaller
+import akka.pattern.ask
 import akka.stream.ActorMaterializer
+import akka.util.Timeout
+import spray.json.DefaultJsonProtocol
+
+import scala.concurrent.duration.DurationInt
+import scala.language.postfixOps
+
+/**
+ * Notes
+ * - Seamlessly receive and send JSON payloads
+ *
+ * Step 1: add Spray facilities
+ * Step 2: Define the protocol trait
+ * Step 3: mix everything in
+ *
+ * Magic 1: send object directly
+ * - auto-marshalled to JSON
+ *
+ * Magic 2: receive objects directly
+ * - auto-unmarshalled from JSON payloads
+ */
 
 case class Player(nickname: String, characterClass: String, level: Int)
 
@@ -16,7 +42,9 @@ object GameAreaMap {
 }
 
 class GameAreaMap extends Actor with ActorLogging {
+
   import GameAreaMap._
+
   var players = Map[String, Player]()
 
   override def receive: Receive = {
@@ -40,9 +68,15 @@ class GameAreaMap extends Actor with ActorLogging {
   }
 }
 
-object MarshallingJSON extends App {
+// step 2
+trait PlayerJsonProtocol extends DefaultJsonProtocol {
+  implicit val playerFormat = jsonFormat3(Player)
+}
+
+object MarshallingJSON extends App with PlayerJsonProtocol with SprayJsonSupport {
   implicit val system = ActorSystem("MarshallingJSON")
   implicit val materializer = ActorMaterializer()
+
   import GameAreaMap._
 
   val rtjvmGameMap = system.actorOf(Props[GameAreaMap], "rockTheJVMGameAreaMap")
@@ -64,30 +98,34 @@ object MarshallingJSON extends App {
     - POST /api/player with JSON payload, adds the player to the map
     - (Exercise) DELETE /api/player with JSON payload, removes teh player from the map
    */
-
+  implicit val timeout = Timeout(2 seconds)
   val rtjvmGameRouteSkel =
     pathPrefix("api" / "player") {
       get {
         path("class" / Segment) { characterClass =>
-          // TODO 1: get all the player with characterClass
-          reject
+          val playersByClassFuture = ((rtjvmGameMap ? GetPlayersByClass(characterClass))).mapTo[List[Player]]
+          complete(playersByClassFuture)
         } ~
           (path(Segment) | parameter('nickname)) { nickname =>
-            // TODO 2: get the player with the nickname
-            reject
+            val playerOptionFuture = (rtjvmGameMap ? GetPlayer(nickname)).mapTo[Option[Player]]
+            complete(playerOptionFuture)
           } ~
           pathEndOrSingleSlash {
-            // TODO 3: get ALL the players
-            reject
+            complete((rtjvmGameMap ? GetAllPlayers).mapTo[List[Player]])
           }
       } ~
         post {
-          // TODO 4: add a player
-          reject
+          entity(implicitly[FromRequestUnmarshaller[Player]]) { player =>
+            complete((rtjvmGameMap ? AddPlayer(player)).map(_ => StatusCodes.OK))
+          }
         } ~
         delete {
-          // TODO 5 (exercise): delete a player
-          reject
+          entity(as[Player]) { player =>
+            complete((rtjvmGameMap ? RemovePlayer(player)).map(_ => StatusCodes.OK))
+          }
         }
     }
+
+  Http().bindAndHandle(rtjvmGameRouteSkel, "localhost", 8080)
+
 }
