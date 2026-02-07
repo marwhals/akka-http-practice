@@ -25,8 +25,6 @@ import akka.stream.ActorMaterializer
  * Handle rejections
  * - Rejection handler = function between a rejection list and a route
  * - rejection handling directives --- careful with ordering
- *
- *
  */
 
 object HandlingRejections extends App {
